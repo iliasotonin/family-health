@@ -1,0 +1,67 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# env files: real ones stay local, the template is published
+.env*
+!.env.example
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# Family Health Cabinet — personal data never goes to git
+/data/
+/private/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite-*
+prisma/dev.db*
+.env
+
+# One-off import scripts carry real people's lab values, genotypes and dates of birth.
+# Keep personal importers here or in /private/; a sanitized example can live elsewhere.
+/scripts/
+
+# Local list of personal identifiers for the pre-commit guard (the list itself is PII)
+.pii-patterns
+
+# genetic/medical raw files
+*.vcf
+*.vcf.gz
+*.txt.gz
+*23andme*

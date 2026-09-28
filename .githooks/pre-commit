@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# Stops a commit that would publish personal health data.
+# Enable once per clone:  git config core.hooksPath .githooks
+set -u
+
+staged=$(git diff --cached --name-only --diff-filter=ACMR)
+[ -z "$staged" ] && exit 0
+fail=0
+
+# 1. Paths that never belong in git, whatever they contain: one-off import scripts with
+#    real data, uploaded documents, databases, genomes, the real .env.
+blocked=$(printf '%s\n' "$staged" | grep -E '^(scripts|private|data)/|\.db($|[.-])|\.sqlite|\.vcf|23andme|(^|/)\.env$|(^|/)\.pii-patterns$' || true)
+if [ -n "$blocked" ]; then
+  echo "pre-commit: эти пути не должны попадать в git:" >&2
+  printf '%s\n' "$blocked" | sed 's/^/  /' >&2
+  fail=1
+fi
+
+# 2. Personal identifiers from .pii-patterns (one extended regex per line, # for comments).
+#    That file is gitignored, so the list of names and dates never leaves the machine.
+if [ -f .pii-patterns ]; then
+  patterns=$(grep -vE '^[[:space:]]*(#|$)' .pii-patterns)
+  if [ -n "$patterns" ]; then
+    while IFS= read -r f; do
+      [ -z "$f" ] && continue
+      if git diff --cached -U0 -- "$f" | grep -E '^\+' | grep -v '^+++' | grep -qiE -f <(printf '%s\n' "$patterns"); then
+        echo "pre-commit: в $f найдены личные данные из .pii-patterns" >&2
+        fail=1
+      fi
+    done <<< "$staged"
+  fi
+else
+  echo "pre-commit: .pii-patterns не найден — проверка имён и дат пропущена (см. README)" >&2
+fi
+
+[ "$fail" -eq 0 ] || echo "Коммит остановлен. Если это ложная тревога: git commit --no-verify" >&2
+exit $fail

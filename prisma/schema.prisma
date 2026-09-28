@@ -1,0 +1,222 @@
+// Family Health Cabinet — data model
+// SQLite for local use; swap `provider`/url to postgresql for droplet deployment.
+// No Prisma enums (unsupported on SQLite) — enum-like fields are strings validated in app code.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+/// A person whose health is tracked (self, spouse, child).
+model Member {
+  id        String   @id @default(cuid())
+  name      String
+  role      String   @default("member") // self | spouse | child | member
+  sex       String? // male | female | other
+  birthDate DateTime?
+  color     String   @default("#4f46e5") // avatar accent
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  documents        Document[]
+  measurements     Measurement[]
+  diaryEntries     DiaryEntry[]
+  medications      Medication[]
+  vaccinations     Vaccination[]
+  geneticVariants  GeneticVariant[]
+  whoopConnection  WhoopConnection?
+  whoopDailies     WhoopDaily[]
+  insights         Insight[]
+  foodEntries      FoodEntry[]
+
+  kcalTarget       Int?
+  proteinTarget    Int?
+}
+
+/// An uploaded source file (lab PDF, Genotek export, imaging report, etc.).
+model Document {
+  id            String   @id @default(cuid())
+  memberId      String
+  member        Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  kind          String   // lab_panel | genetic | imaging | prescription | other
+  fileName      String
+  storedPath    String   // path on disk under DATA_DIR/uploads
+  mimeType      String
+  sizeBytes     Int
+  collectedDate DateTime?
+  sourceLab     String?  // e.g. "Invitro", "Genotek", clinic name
+  status        String   @default("uploaded") // uploaded | parsing | parsed | failed
+  parseError    String?
+  rawExtract    String?  // JSON string of the model's structured extraction
+  summary       String?  // short human summary of this document
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  measurements    Measurement[]
+  geneticVariants GeneticVariant[]
+
+  @@index([memberId, kind])
+}
+
+/// A single numeric measurement over time — lab biomarker OR manual vital.
+/// Unifies bloodwork, lipids, hormones, vitamins, weight, blood pressure, temperature, etc.
+model Measurement {
+  id          String   @id @default(cuid())
+  memberId    String
+  member      Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  documentId  String?
+  document    Document? @relation(fields: [documentId], references: [id], onDelete: SetNull)
+  code        String   // canonical key, e.g. "hemoglobin", "ldl", "weight", "bp_systolic"
+  label       String   // display name as printed on the source
+  category    String   @default("other") // hematology | lipids | hormones | vitamins | metabolic | vitals | other
+  value       Float
+  unit        String?
+  refLow      Float?
+  refHigh     Float?
+  flag        String?  // low | normal | high | critical
+  measuredAt  DateTime
+  source      String   @default("lab") // lab | manual | whoop
+  note        String?
+  createdAt   DateTime @default(now())
+
+  @@index([memberId, code, measuredAt])
+}
+
+/// Free-text daily log: symptoms, mood, notes.
+model DiaryEntry {
+  id        String   @id @default(cuid())
+  memberId  String
+  member    Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  date      DateTime
+  mood      Int? // 1..5 optional
+  symptoms  String?
+  note      String?
+  createdAt DateTime @default(now())
+
+  @@index([memberId, date])
+}
+
+/// Medications / supplements, current or historical.
+model Medication {
+  id        String    @id @default(cuid())
+  memberId  String
+  member    Member    @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  name      String
+  dose      String?
+  schedule  String? // e.g. "1x/day morning"
+  startDate DateTime?
+  endDate   DateTime?
+  active    Boolean   @default(true)
+  note      String?
+  createdAt DateTime  @default(now())
+
+  @@index([memberId, active])
+}
+
+/// Vaccinations (esp. children's schedule).
+model Vaccination {
+  id        String   @id @default(cuid())
+  memberId  String
+  member    Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  name      String
+  date      DateTime
+  dose      String? // e.g. "V1", "R2"
+  note      String?
+  createdAt DateTime @default(now())
+
+  @@index([memberId, date])
+}
+
+/// A single genetic finding (from Genotek and similar).
+model GeneticVariant {
+  id             String   @id @default(cuid())
+  memberId       String
+  member         Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  documentId     String?
+  document       Document? @relation(fields: [documentId], references: [id], onDelete: SetNull)
+  gene           String?
+  rsid           String?  // e.g. "rs1801133"
+  genotype       String?  // e.g. "C;T"
+  category       String   @default("trait") // pharmacogenetics | carrier | risk | trait | nutrition | other
+  interpretation String?
+  impact         String?  // low | moderate | high | protective | info
+  createdAt      DateTime @default(now())
+
+  @@index([memberId, category])
+}
+
+/// OAuth token store for a member's Whoop account.
+model WhoopConnection {
+  id           String   @id @default(cuid())
+  memberId     String   @unique
+  member       Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  whoopUserId  String?
+  accessToken  String
+  refreshToken String
+  expiresAt    DateTime
+  scopes       String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+/// One row per member per day of Whoop recovery/sleep/strain data.
+model WhoopDaily {
+  id               String   @id @default(cuid())
+  memberId         String
+  member           Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  date             DateTime
+  recoveryScore    Float?
+  hrvMs            Float?
+  restingHr        Float?
+  sleepPerformance Float?
+  sleepDurationMin Float?
+  strain           Float?
+  respiratoryRate  Float?
+  avgHr            Int?
+  spo2             Float?
+  tzOffset         String?
+  skinTempC        Float?
+  maxHr            Int?
+  burnedKcal       Int?
+  createdAt        DateTime @default(now())
+
+  @@unique([memberId, date])
+  @@index([memberId, date])
+}
+
+/// AI-generated summaries, flags, and recommendations.
+model Insight {
+  id              String   @id @default(cuid())
+  memberId        String?  // null = family-wide
+  member          Member?  @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  kind            String   // weekly_summary | flag | recommendation
+  title           String
+  body            String   // markdown
+  severity        String   @default("info") // info | attention | urgent
+  dataWindowStart DateTime?
+  dataWindowEnd   DateTime?
+  model           String?
+  createdAt       DateTime @default(now())
+
+  @@index([memberId, kind])
+}
+
+model FoodEntry {
+  id        String   @id @default(cuid())
+  memberId  String
+  member    Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  eatenAt   DateTime
+  meal      String   @default("other") // breakfast | lunch | dinner | snack | drink | other
+  title     String
+  kcal      Int?
+  proteinG  Float?
+  alcoholMl Float? // ml of pure ethanol, the lever we actually track
+  note      String?
+  createdAt DateTime @default(now())
+
+  @@index([memberId, eatenAt])
+}
